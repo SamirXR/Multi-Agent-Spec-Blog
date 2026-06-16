@@ -704,9 +704,246 @@ export function createTask(req: Request, res: Response): void {
         </ol>
       </section>
 
+      <!-- EXTERNAL EXAMPLES SECTION -->
+      <section>
+        <h2>
+          <svg class="icon" width="24" height="24" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zM13 9V3.5L18.5 9H13z"/></svg>
+          External Examples for Contract Testing
+        </h2>
+        <p>
+          One of the most powerful features of Specmatic is <strong>external examples</strong>. While inline examples in the OpenAPI spec are useful for documentation, external examples allow us to define explicit test scenarios in standalone JSON files — giving us fine-grained control over what the contract tests validate.
+        </p>
+
+        <h3>Convention: The <code>_examples</code> Folder</h3>
+        <p>
+          Specmatic follows a naming convention: for each specification file <code>foo-service.yaml</code>, it automatically looks for a folder named <code>foo-service_examples/</code> in the same directory. Each JSON file in this folder represents one test scenario with a full <code>http-request</code> / <code>http-response</code> pair.
+        </p>
+
+<pre><code>contracts/
+├── user-service.yaml
+├── user-service_examples/
+│   ├── create_user_success.json        ← POST /users → 201
+│   ├── get_user_by_id.json             ← GET /users/1 → 200
+│   ├── list_users.json                 ← GET /users → 200
+│   ├── get_user_not_found.json         ← GET /users/9999 → 404
+│   └── create_user_missing_fields.json ← POST /users → 400
+├── task-service.yaml
+├── task-service_examples/
+│   ├── create_task_success.json
+│   ├── list_tasks.json
+│   ├── list_tasks_by_status.json
+│   └── create_task_missing_fields.json
+├── notification-service.yaml
+├── notification-service_examples/
+│   └── ...
+├── analytics-service.yaml
+└── analytics-service_examples/
+    └── ...</code></pre>
+
+        <h3>External Example JSON Format</h3>
+        <p>
+          Each JSON file defines a complete request-response pair. When defining examples with dynamic formats, Specmatic provides specific built-in Matchers. Our CI validation highlighted this powerfully: <strong>using generic <code>(string)</code> wildcards fails validation for formatted strings. Instead, Specmatic requires its specific format Matchers like <code>(email)</code> or <code>(datetime)</code>, maintaining structural flexibility without needing hardcoded values.</strong> Replacing generic string placeholders with these precise Specmatic Matchers successfully resolved our CI pipeline failures.
+        </p>
+
+<pre><code>// contracts/task-service_examples/create_task_success.json
+{
+  "http-request": {
+    "method": "POST",
+    "path": "/tasks",
+    "headers": { "Content-Type": "application/json" },
+    "body": {
+      "title": "Implement login API",
+      "description": "Build the authentication endpoint with JWT",
+      "assigneeId": 1,
+      "priority": "high"
+    }
+  },
+  "http-response": {
+    "status": 201,
+    "headers": { "Content-Type": "application/json" },
+    "body": {
+      "id": "(number)",
+      "title": "Implement login API",
+      "description": "Build the authentication endpoint with JWT",
+      "assigneeId": 1,
+      "status": "pending",
+      "priority": "high",
+      "createdAt": "(string)"
+    }
+  }
+}</code></pre>
+
+        <div class="callout">
+          <p>
+            <strong>Why external examples matter:</strong> Inline examples in the OpenAPI spec are great for API documentation, but they couple your test data to your specification. External examples let teams maintain test scenarios independently — including negative test cases (missing fields, invalid values) that are awkward to embed in the spec itself.
+          </p>
+        </div>
+
+        <h3>Validating Examples Against Specs</h3>
+        <p>
+          Specmatic provides a <code>examples validate</code> command that checks whether all external example files conform to the corresponding OpenAPI specification. If any example has the wrong field types, missing required fields, or invalid enum values, the validation fails immediately — catching spec drift before tests even run.
+        </p>
+
+<pre><code># Validate all external examples against their specs
+npx specmatic examples validate --spec-file contracts/user-service.yaml
+npx specmatic examples validate --spec-file contracts/task-service.yaml
+npx specmatic examples validate --spec-file contracts/notification-service.yaml
+npx specmatic examples validate --spec-file contracts/analytics-service.yaml</code></pre>
+      </section>
+
+      <!-- CI/CD INTEGRATION SECTION -->
+      <section>
+        <h2>
+          <svg class="icon" width="24" height="24" viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+          CI/CD Integration with Specmatic
+        </h2>
+        <p>
+          A contract validation pipeline is only valuable if it runs <strong>automatically on every push</strong>. We integrated Specmatic into our GitHub Actions CI/CD pipeline with a multi-stage workflow that validates specifications, runs contract tests against live services, and validates external examples — all without requiring any API keys or manual intervention.
+        </p>
+
+        <h3>Pipeline Architecture</h3>
+        <p>
+          Our CI pipeline is split into focused, independent jobs that run in sequence:
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th>What It Does</th>
+              <th>Failure Means</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>1. Validate Specs & Examples</strong></td>
+              <td>Lints OpenAPI contracts with Redocly, validates external examples with Specmatic</td>
+              <td>Spec has structural errors or examples are out of sync</td>
+            </tr>
+            <tr>
+              <td><strong>2. Contract Tests</strong></td>
+              <td>Starts all 4 microservices, waits for health checks, runs <code>specmatic test</code> against each</td>
+              <td>Service implementation doesn't match contract</td>
+            </tr>
+            <tr>
+              <td><strong>3. Build Dashboard</strong></td>
+              <td>Compiles the React research dashboard</td>
+              <td>Build or type errors in frontend code</td>
+            </tr>
+            <tr>
+              <td><strong>4. Report</strong></td>
+              <td>Generates a summary in the GitHub Actions UI</td>
+              <td>—</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Key CI Design Decisions</h3>
+        <ul>
+          <li><strong>Health-check polling instead of <code>sleep</code></strong>: Rather than blindly sleeping for a fixed time after starting services, the pipeline polls each service's <code>/health</code> endpoint with retries. This is more reliable and eliminates flaky failures from slow service startup.</li>
+          <li><strong>External examples validation as a gate</strong>: Before running expensive contract tests, the pipeline first validates that all external examples conform to their specs. This catches simple structural issues early and fast. <strong>Our recent CI runs highlighted the strictness of this step—it correctly failed our build when we incorrectly used generic <code>(string)</code> placeholders for formatted fields. Switching to precise Specmatic Matchers like <code>(email)</code> and <code>(datetime)</code> proved the framework's effectiveness in enforcing format-compliant, dynamic test payloads.</strong></li>
+          <li><strong>No API key dependency</strong>: The CI pipeline only runs Specmatic contract tests — it does not run the LLM agent experiment (which requires an NVIDIA API key). This keeps CI green and reproducible without secrets.</li>
+          <li><strong>Java requirement</strong>: Specmatic is a JVM-based tool. The pipeline uses <code>actions/setup-java</code> with Temurin JDK 17 to ensure the Specmatic CLI works correctly.</li>
+          <li><strong>License via GitHub Secrets</strong>: The Specmatic Enterprise license is gitignored and not committed to the repo. Instead, the license content is stored as a GitHub Repository Secret (<code>SPECMATIC_LICENSE</code>) and written to <code>license.txt</code> at CI runtime. This enables resiliency tests in CI without exposing the license in version control.</li>
+        </ul>
+
+        <h3>Workflow Configuration</h3>
+
+<pre><code># .github/workflows/contract-validation.yml (excerpt)
+jobs:
+  validate-specs:
+    name: Validate API Contracts & Examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17' }
+      - run: npm install
+      - name: Validate OpenAPI contracts (lint)
+        run: |
+          npx @redocly/cli lint contracts/user-service.yaml
+          npx @redocly/cli lint contracts/task-service.yaml
+          # ... remaining specs
+      - name: Validate external examples
+        run: |
+          npx specmatic examples validate --spec-file contracts/user-service.yaml
+          npx specmatic examples validate --spec-file contracts/task-service.yaml
+          # ... remaining specs
+
+  contract-tests:
+    needs: validate-specs
+    steps:
+      - name: Write Specmatic license
+        if: ${{ secrets.SPECMATIC_LICENSE != '' }}
+        run: echo "${{ secrets.SPECMATIC_LICENSE }}" > license.txt
+      # Start services → poll health → run specmatic test
+      - name: Wait for services to be ready
+        run: |
+          for port in 3001 3002 3003 3004; do
+            for i in $(seq 1 30); do
+              curl -s http://localhost:$port/health && break
+              sleep 1
+            done
+          done
+      - run: npx specmatic test contracts/user-service.yaml \
+               --testBaseURL=http://localhost:3001
+      # ... remaining services</code></pre>
+
+        <div class="callout">
+          <p>
+            <strong>Lesson learned:</strong> Running Specmatic in CI caught issues we missed locally — particularly around Content-Type header enforcement and edge cases in query parameter validation. CI is the true litmus test for contract compliance.
+          </p>
+        </div>
+      </section>
+
+      <!-- SPECADEMY LEARNINGS SECTION -->
+      <section>
+        <h2>
+          <svg class="icon" width="24" height="24" viewBox="0 0 24 24"><path d="M12 3L1 9l4 2.18v6L12 21l7-3.82v-6l2-1.09V17h2V9L12 3zm6.82 6L12 12.72 5.18 9 12 5.28 18.82 9zM17 15.99l-5 2.73-5-2.73v-3.72L12 15l5-2.73v3.72z"/></svg>
+          Specademy Learnings
+        </h2>
+        
+        <div style="text-align: center; margin: 2rem 0;">
+          <img src="assets/specademy_certificate.png" alt="Specademy Certificate of Completion" style="max-width: 100%; border-radius: 8px; border: 1px solid var(--panel-border); box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+          <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--success-text);">✅ Specademy Certificate of Completion Submitted.</p>
+        </div>
+
+        <p>
+          The <strong>Specademy</strong> certification program provided structured, hands-on training in contract-driven development. These are the key takeaways that directly influenced our project architecture:
+        </p>
+
+        <ol>
+          <li>
+            <strong>Contract-First Development</strong>: Writing the OpenAPI specification <em>before</em> any service implementation ensures all teams (and agents) share the same truth. This eliminates the "who changed the API?" problem entirely.
+          </li>
+          <li>
+            <strong>Generative Testing is Not Optional</strong>: Specmatic's ability to auto-generate test cases from the spec — including negative tests, boundary conditions, and type mutations — is far more comprehensive than hand-written tests. The Specademy curriculum emphasizes this as the core value proposition.
+          </li>
+          <li>
+            <strong>Stub/Mock Servers from Specs</strong>: Specmatic can spin up mock servers directly from OpenAPI specs, enabling frontend and backend teams to develop in parallel. In our multi-agent context, this means the Frontend Agent can test against a Specmatic stub while the Backend Agent implements the real service.
+          </li>
+          <li>
+            <strong>Backward Compatibility Checks</strong>: Specmatic can compare two versions of a spec to detect breaking changes (removed endpoints, changed types, narrowed enums). This is critical for safe API evolution and should be integrated into every PR pipeline.
+          </li>
+          <li>
+            <strong>External Examples as Living Test Suites</strong>: The <code>_examples</code> convention transforms test data management. Examples are version-controlled alongside specs, validated on every CI run, and can be shared across teams as the canonical test dataset.
+          </li>
+        </ol>
+
+        <div class="callout">
+          <p>
+            <strong>Recommendation:</strong> For any team adopting Specmatic, the Specademy course is the fastest path to understanding contract-first workflows. The hands-on labs on resiliency testing and stub generation were particularly valuable for our multi-agent research.
+          </p>
+        </div>
+      </section>
+
     </main>
 
-
+    <footer>
+      <p>Published by Samir · Multi-Agent-Spec Research Project · Built with Specmatic</p>
+    </footer>
 
   </div>
 
